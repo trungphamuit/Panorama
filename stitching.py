@@ -389,9 +389,9 @@ if __name__ == "__main__":
     """ Here is a simple example of using this sticher """
     """
     # load images
-    img1 = cv2.imread('../data/example-data/flower/1.jpg')
-    img2 = cv2.imread('../data/example-data/flower/2.jpg')
-    img3 = cv2.imread('../data/example-data/flower/3.jpg')
+    img1 = cv2.imread('../test1/pic1.jpg')
+    img2 = cv2.imread('../test1/pic2.jpg')
+    img3 = cv2.imread('../test1/pic3.jpg')
     gray1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
     gray2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
     gray3 = cv2.cvtColor(img3, cv2.COLOR_RGB2GRAY)
@@ -424,10 +424,9 @@ if __name__ == "__main__":
     """
 
     stitcher = Stitcher([
-        '../data/example-data/flower/1.jpg',
-        '../data/example-data/flower/2.jpg',
-        '../data/example-data/flower/3.jpg',
-        '../data/example-data/flower/4.jpg',
+        '../test1/pic1.jpg',
+        '../test1/pic2.jpg',
+        '../test1/pic3.jpg',
         ],
         mode='Flat',
         )
