@@ -56,7 +56,7 @@ def cylindricalWarpImage(img1, K, savefig=False):
 
 
 if __name__ == "__main__":
-    im = cv2.imread('../data/example-data/flower/1.jpg')
+    im = cv2.imread('../test1/pic1.jpg')
     h,w = im.shape[:2]
     f = 700
     K = np.array([[f, 0, w/2], [0, f, h/2], [0, 0, 1]]) # mock calibration matrix
