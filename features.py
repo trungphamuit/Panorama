@@ -17,7 +17,7 @@ class FeatureExtractor:
         return kp, des
 
 if __name__ == "__main__":
-    img = cv2.imread('../data/example-data/flower/1.jpg')
+    img = cv2.imread('../test1/pic1.jpg')
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     # extractor = FeatureExtractor('SURF')
     extractor = FeatureExtractor('SIFT')
