@@ -6,7 +6,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import imutils
 import os
-
+import math
 
 class Pano():
     def __init__(self, path, ratio=0.75, mindist=40, half=True):
@@ -72,11 +72,49 @@ class Pano():
         _, des1, _, des2 = self.featureExtractor(im1, im2, method)
         matches = self.matchFeatures(des1, des2, method)
         return len(matches)
+    def cylindricalWarpImage(self, img1, K):
+        f = K[0,0]
 
-    def stitch(self, query_image, train_image, method):
-        '''
-        query_image, train_image: images to stich together
-        '''
+        im_h,im_w = img1.shape[:2]
+
+        # go inverse from cylindrical coord to the image
+        # (this way there are no gaps)
+        cyl = np.zeros_like(img1)
+        cyl_h, cyl_w = cyl.shape[:2]
+        x_c = float(cyl_w) / 2.0
+        y_c = float(cyl_h) / 2.0
+        for x_cyl in np.arange(0,cyl_w):
+            for y_cyl in np.arange(0,cyl_h):
+                theta = (x_cyl - x_c) / f
+                h     = (y_cyl - y_c) / f
+
+                X = np.array([math.sin(theta), h, math.cos(theta)])
+                X = np.dot(K,X)
+                x_im = X[0] / X[2]
+                if x_im < 0 or x_im >= im_w:
+                    continue
+
+                y_im = X[1] / X[2]
+                if y_im < 0 or y_im >= im_h:
+                    continue
+
+                cyl[int(y_cyl),int(x_cyl)] = img1[int(y_im),int(x_im)]
+
+        return cyl
+
+    def stitch(self, query_image, train_image, method, mode):
+        #query_image, train_image: images to stich together
+        if mode == 'affine':
+            h,w = query_image.shape[:2]
+            f = 1000
+            K = np.array([[f, 0, w/2], [0, f, h/2], [0, 0, 1]])
+            query_image = self.cylindricalWarpImage(query_image, K)
+
+            h,w = train_image.shape[:2]
+            f = 1000
+            K = np.array([[f, 0, w/2], [0, f, h/2], [0, 0, 1]]) # mock calibration matrix
+            train_image = self.cylindricalWarpImage(train_image, K)
+
         # add some room for train image to be warped without losing parts
         query_image = cv2.copyMakeBorder(query_image,
                                          int(query_image.shape[0] * 0.3),
@@ -102,12 +140,21 @@ class Pano():
         # Homography estimation using RANSAC
         dst = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
         src = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
-        H, masked = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
-        print('Transformation matrix: {}'.format(H))
-        # Perspective warping
-        width = train_image.shape[1] + query_image.shape[1]
-        height = train_image.shape[0] + query_image.shape[0]
-        result = cv2.warpPerspective(train_image, H, (width, height))
+
+        if mode == 'homo':
+            H, masked = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
+            print('Transformation matrix: {}'.format(H))
+            # Perspective warping
+            width = train_image.shape[1] + query_image.shape[1]
+            height = train_image.shape[0] + query_image.shape[0]
+            result = cv2.warpPerspective(train_image, H, (width, height))
+        
+        if mode == 'affine':
+            H, masked = cv2.estimateAffine2D(src, dst, cv2.RANSAC, ransacReprojThreshold=5.0)
+            print('Transformation matrix: {}'.format(H))
+            width = train_image.shape[1] + query_image.shape[1]
+            height = train_image.shape[0] + query_image.shape[0]
+            result = cv2.warpAffine(train_image, H, (width, height))
         # blend query image onto warped, erosion helps with smooth edges
         a = np.zeros_like(result)
         a[0:query_image.shape[0], 0:query_image.shape[1]] = query_image
@@ -115,14 +162,14 @@ class Pano():
         result = np.where(cv2.erode(a, kernel, iterations=1) == 0, result, a)
         return result
 
-    def right_stitch(self, query_image, train_image, method):
+    def right_stitch(self, query_image, train_image, method, mode):
         '''
         query_image, train_image: images to stich together
         '''
         # mirror image, then stitch, then mirror back
         train_image, query_image = cv2.flip(train_image, +1), \
                                    cv2.flip(query_image, +1)
-        result = cv2.flip(self.stitch(query_image, train_image, method), +1)
+        result = cv2.flip(self.stitch(query_image, train_image, method, mode), +1)
         return result
 
     def crop(self, pano):
@@ -146,7 +193,7 @@ class Pano():
         result = pano[y:y + h, x:x + w]
         return result
 
-    def createPanorama(self, method):
+    def createPanorama(self, method, mode):
         # find leftmost image
         numberOfMatches = [0] * len(self.images)
         for pos, i in enumerate(self.images):
@@ -170,24 +217,26 @@ class Pano():
         result = imagesRtoL[mid]
         # stitch images to the right of middle
         for i in range(mid + 1, n):
-            result = self.crop(self.stitch(result, imagesRtoL[i], method))
+            result = self.crop(self.stitch(result, imagesRtoL[i], method, mode))
         # stitch images to the left of middle
         for i in range(mid - 1, -1, -1):
-            result = self.crop(self.right_stitch(result, imagesRtoL[i], method))
+            result = self.crop(self.right_stitch(result, imagesRtoL[i], method, mode))
         return result
 
 
 def demo():
     p = Pano('test1', 0.75, 47, True)  # using test1 folder as demo
     method = 'orb'
-    pano = p.createPanorama(method)
+    mode = 'affine'
+    pano = p.createPanorama(method, mode)
     cv2.imwrite('demo.png', pano)
 
 
 def main(folder):
     p = Pano(folder, 0.75, 47, True)
     method = 'orb'
-    pano = p.createPanorama(method)
+    mode = 'homo'
+    pano = p.createPanorama(method, mode)
     cv2.imwrite('pano.png', pano)
 
 
